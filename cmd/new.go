@@ -15,37 +15,37 @@ import (
 )
 
 var (
-	draftTags       []string
-	draftTagsString string
-	verbose         bool
+	newTags       []string
+	newTagsString string
+	newVerbose    bool
 )
 
-var DraftCmd = &cobra.Command{
-	Use:   "draft [title]",
-	Short: "创建一篇新的草稿文章",
-	Long: `创建一篇新的草稿文章到草稿目录中。
+var NewCmd = &cobra.Command{
+	Use:   "new [title]",
+	Short: "创建一篇新的正式文章",
+	Long: `创建一篇新的正式文章到blogs目录中。
 
 文章将按照标签创建目录结构，目录路径可在配置文件中自定义。
-如果未提供文章标题，将会启动交互式模式来收集必要信息。`,
-	Example: `  myblog draft "我的第一篇博客" --tags "Go/基础"
-  myblog draft "设计模式实践" --tags "Go/设计模式/教程"
-  myblog draft  # 交互式模式`,
+文章会自动添加发布时间。如果未提供文章标题，将会启动交互式模式来收集必要信息。`,
+	Example: `  myblog new "我的第一篇博客" --tags "Go/基础"
+  myblog new "设计模式实践" --tags "Go/设计模式/教程"
+  myblog new  # 交互式模式`,
 	Args: cobra.MaximumNArgs(1),
-	Run:  runDraftCommand,
+	Run:  runNewCommand,
 }
 
 func init() {
 	// 添加命令行标志
-	DraftCmd.Flags().StringVarP((*string)(&draftTagsString), "tags", "t", "", "文章标签路径 (使用斜杠分隔创建目录结构，如: Go/基础/教程)")
-	DraftCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "详细输出")
+	NewCmd.Flags().StringVarP(&newTagsString, "tags", "t", "", "文章标签路径 (使用斜杠分隔创建目录结构，如: Go/基础/教程)")
+	NewCmd.Flags().BoolVarP(&newVerbose, "verbose", "v", false, "详细输出")
 
 	// 设置日志级别
-	if verbose {
+	if newVerbose {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 }
 
-func runDraftCommand(cmd *cobra.Command, args []string) {
+func runNewCommand(cmd *cobra.Command, args []string) {
 	// 设置颜色输出
 	green := color.New(color.FgGreen).SprintFunc()
 	red := color.New(color.FgRed).SprintFunc()
@@ -58,24 +58,24 @@ func runDraftCommand(cmd *cobra.Command, args []string) {
 	if len(args) > 0 {
 		title = args[0]
 		// 处理命令行标签参数
-		if draftTagsString != "" {
-			tags := strings.Split(draftTagsString, "/")
+		if newTagsString != "" {
+			tags := strings.Split(newTagsString, "/")
 			for _, tag := range tags {
 				tag = strings.TrimSpace(tag)
 				if tag != "" {
-					draftTags = append(draftTags, tag)
+					newTags = append(newTags, tag)
 				}
 			}
 		}
 	} else {
 		// 交互式获取信息
-		articleInfo, err := getArticleInfoInteractively()
+		articleInfo, err := getNewArticleInfoInteractively()
 		if err != nil {
 			fmt.Printf("%s %v\n", red("错误:"), err)
 			return
 		}
 		title = articleInfo.Title
-		draftTags = articleInfo.Tags
+		newTags = articleInfo.Tags
 	}
 
 	if title == "" {
@@ -83,41 +83,43 @@ func runDraftCommand(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	fmt.Printf("%s 正在创建草稿: %s\n", blue("信息:"), yellow(title))
+	fmt.Printf("%s 正在创建正式文章: %s\n", blue("信息:"), yellow(title))
 
-	// 创建草稿
-	filePath, err := createDraft(title, draftTags)
+	// 创建正式文章
+	filePath, err := createNewArticle(title, newTags)
 	if err != nil {
-		fmt.Printf("%s 创建草稿失败: %v\n", red("错误:"), err)
-		logrus.WithError(err).Error("创建草稿失败")
+		fmt.Printf("%s 创建文章失败: %v\n", red("错误:"), err)
+		logrus.WithError(err).Error("创建文章失败")
 		return
 	}
 
-	fmt.Printf("%s 成功创建草稿!\n", green("✓"))
+	fmt.Printf("%s 成功创建正式文章!\n", green("✓"))
 	fmt.Printf("  文件路径: %s\n", green(filePath))
 	fmt.Printf("  标题: %s\n", title)
-	if len(draftTags) > 0 {
-		fmt.Printf("  标签: %s\n", strings.Join(draftTags, "/"))
-		fmt.Printf("  目录结构: %s\n", blue(strings.Join(draftTags, "/")))
+	if len(newTags) > 0 {
+		fmt.Printf("  标签: %s\n", strings.Join(newTags, "/"))
+		fmt.Printf("  目录结构: %s\n", blue(strings.Join(newTags, "/")))
 	}
+	fmt.Printf("  发布时间: %s\n", time.Now().Format("2006年01月02日 15:04"))
 
 	logrus.WithFields(logrus.Fields{
 		"title": title,
 		"path":  filePath,
-		"tags":  draftTags,
-	}).Info("草稿创建成功")
+		"tags":  newTags,
+		"type":  "published",
+	}).Info("正式文章创建成功")
 }
 
-type ArticleInfo struct {
+type NewArticleInfo struct {
 	Title string
 	Tags  []string
 }
 
-func getArticleInfoInteractively() (*ArticleInfo, error) {
-	info := &ArticleInfo{}
+func getNewArticleInfoInteractively() (*NewArticleInfo, error) {
+	info := &NewArticleInfo{}
 
 	// 获取已有标签路径用于选择
-	existingTagPaths := getExistingTags()
+	existingTagPaths := getExistingTagsForNew()
 
 	// 1. 获取文章标题
 	titleQuestion := &survey.Input{
@@ -157,7 +159,7 @@ func getArticleInfoInteractively() (*ArticleInfo, error) {
 		var customTagsInput string
 		customTagQuestion := &survey.Input{
 			Message: "请输入标签路径 (使用斜杠分隔创建多级目录):",
-			Help:    fmt.Sprintf("例如: Go/设计模式/单例 → %s/Go/设计模式/单例/", config.GetDraftDir()),
+			Help:    fmt.Sprintf("例如: Go/设计模式/单例 → %s/Go/设计模式/单例/", config.GetBlogsDir()),
 		}
 
 		err = survey.AskOne(customTagQuestion, &customTagsInput)
@@ -186,23 +188,23 @@ func getArticleInfoInteractively() (*ArticleInfo, error) {
 	if len(finalTags) > 0 {
 		fmt.Printf("\n📁 目录结构预览: %s → %s/%s/\n",
 			strings.Join(finalTags, "/"),
-			config.GetDraftDir(),
+			config.GetBlogsDir(),
 			strings.Join(finalTags, "/"))
 	} else {
-		fmt.Printf("\n📁 目录结构预览: → %s/\n", config.GetDraftDir())
+		fmt.Printf("\n📁 目录结构预览: → %s/\n", config.GetBlogsDir())
 	}
 
 	return info, nil
 }
 
-// 获取已存在的完整标签路径（从blogs和_draft目录）
-func getExistingTags() []string {
+// 获取已存在的完整标签路径（主要从blogs目录，也扫描_draft目录作为参考）
+func getExistingTagsForNew() []string {
 	tagPaths := make(map[string]bool)
 
-	// 扫描blogs目录
+	// 主要扫描blogs目录
 	scanTagPathsRecursively(config.GetBlogsDir(), "", tagPaths)
 
-	// 扫描_draft目录
+	// 也扫描_draft目录作为参考
 	scanTagPathsRecursively(config.GetDraftDir(), "", tagPaths)
 
 	// 转换为切片并排序
@@ -214,64 +216,18 @@ func getExistingTags() []string {
 	}
 
 	return result
-} // 递归扫描目录获取完整标签路径
-func scanTagPathsRecursively(dirPath string, currentPath string, tagPaths map[string]bool) {
-	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		return
-	}
-
-	dirs, err := os.ReadDir(dirPath)
-	if err != nil {
-		return
-	}
-
-	hasSubDirs := false
-	for _, dir := range dirs {
-		if dir.IsDir() {
-			hasSubDirs = true
-			var newPath string
-			if currentPath == "" {
-				newPath = dir.Name()
-			} else {
-				newPath = currentPath + "/" + dir.Name()
-			}
-
-			// 递归扫描子目录
-			scanTagPathsRecursively(filepath.Join(dirPath, dir.Name()), newPath, tagPaths)
-		}
-	}
-
-	// 如果当前目录没有子目录，或者包含.md文件，则认为是一个完整的标签路径
-	if currentPath != "" && (!hasSubDirs || containsMarkdownFiles(dirPath)) {
-		tagPaths[currentPath] = true
-	}
 }
 
-// 检查目录是否包含markdown文件
-func containsMarkdownFiles(dirPath string) bool {
-	files, err := os.ReadDir(dirPath)
-	if err != nil {
-		return false
-	}
-
-	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(strings.ToLower(file.Name()), ".md") {
-			return true
-		}
-	}
-	return false
-}
-
-func createDraft(title string, tags []string) (string, error) {
+func createNewArticle(title string, tags []string) (string, error) {
 	// 构建目录路径
 	var dirPath string
 	if len(tags) > 0 {
-		// 使用标签作为目录结构：_draft/tag1/tag2/...
+		// 使用标签作为目录结构：blogs/tag1/tag2/...
 		tagPath := strings.Join(tags, string(filepath.Separator))
-		dirPath = filepath.Join(config.GetDraftDir(), tagPath)
+		dirPath = filepath.Join(config.GetBlogsDir(), tagPath)
 	} else {
-		// 如果没有标签，直接放在草稿目录下
-		dirPath = config.GetDraftDir()
+		// 如果没有标签，直接放在blogs目录下
+		dirPath = config.GetBlogsDir()
 	}
 
 	// 确保目录存在
@@ -280,7 +236,7 @@ func createDraft(title string, tags []string) (string, error) {
 	}
 
 	// 生成文件名
-	fileName := sanitizeFileName(title) + ".md"
+	fileName := sanitizeFileNameForNew(title) + ".md"
 	filePath := filepath.Join(dirPath, fileName)
 
 	// 检查文件是否已存在
@@ -289,7 +245,7 @@ func createDraft(title string, tags []string) (string, error) {
 	}
 
 	// 创建文件内容
-	content := generateMarkdownContent(title, tags)
+	content := generateNewMarkdownContent(title, tags)
 
 	// 写入文件
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
@@ -299,7 +255,7 @@ func createDraft(title string, tags []string) (string, error) {
 	return filePath, nil
 }
 
-func sanitizeFileName(title string) string {
+func sanitizeFileNameForNew(title string) string {
 	// 将标题转换为适合作为文件名的格式
 	fileName := strings.ToLower(title)
 
@@ -325,7 +281,7 @@ func sanitizeFileName(title string) string {
 	return fileName
 }
 
-func generateMarkdownContent(title string, tags []string) string {
+func generateNewMarkdownContent(title string, tags []string) string {
 	now := time.Now()
 
 	// 构建标签数组字符串
@@ -341,6 +297,7 @@ func generateMarkdownContent(title string, tags []string) string {
 	content := fmt.Sprintf(`---
 title: "%s"
 date: %s
+published: %s
 tags: [%s]
 ---
 
@@ -362,8 +319,8 @@ tags: [%s]
 
 ---
 
-> 更新时间: %s
-`, title, now.Format("2006-01-02T15:04:05Z07:00"), tagStr, title, now.Format("2006年01月02日 15:04"))
+> 发布时间: %s
+`, title, now.Format("2006-01-02T15:04:05Z07:00"), now.Format("2006-01-02T15:04:05Z07:00"), tagStr, title, now.Format("2006年01月02日 15:04"))
 
 	return content
 }
